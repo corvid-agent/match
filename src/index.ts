@@ -9,6 +9,9 @@ export type Predicate<T> = (value: T) => boolean;
 /** A handler that transforms a matched value into a result. */
 export type Handler<T, R> = (value: T) => R;
 
+/** A handler that receives both the matched value and extracted data. */
+export type ExtractHandler<T, E, R> = (value: T, extracted: E) => R;
+
 /** Pattern for matching values — a literal, predicate, guard, or constructor. */
 export type Pattern<T> =
   | T
@@ -26,10 +29,41 @@ export type PatternType<T, P> = P extends Guard<T, infer N>
 /** A single arm in a match expression: [pattern, handler]. */
 export type Arm<T, R> = readonly [Pattern<T>, Handler<T, R>];
 
+/** An arm with an extracting pattern that passes match data to the handler. */
+export type ExtractArm<T, E, R> = readonly [
+  ExtractingPattern<T, E>,
+  ExtractHandler<T, E, R>,
+];
+
 /** Configuration for discriminated union matching. */
 export interface MatchOptions {
   /** The discriminant property name. Defaults to "type". */
   key?: string;
+}
+
+// -- Extracting pattern protocol --------------------------------------------
+
+const EXTRACT = Symbol("match.extract");
+
+/**
+ * A pattern that extracts data on match, passing it to the handler.
+ * Implement `[EXTRACT](value)` returning the extracted data or `undefined`
+ * if the pattern does not match.
+ */
+export interface ExtractingPattern<T, E> {
+  [EXTRACT](value: T): E | undefined;
+}
+
+/** @internal Check whether a pattern implements the extracting protocol. */
+function isExtractingPattern<T>(
+  p: unknown,
+): p is ExtractingPattern<T, unknown> {
+  return (
+    typeof p === "object" &&
+    p !== null &&
+    EXTRACT in p &&
+    typeof (p as any)[EXTRACT] === "function"
+  );
 }
 
 // -- Wildcard ---------------------------------------------------------------
@@ -119,10 +153,20 @@ function deepPartialMatch(pattern: any, value: any): boolean {
  * ]);
  * ```
  */
-export function match<T, R>(value: T, arms: ReadonlyArray<Arm<T, R>>): R {
+export function match<T, R>(
+  value: T,
+  arms: ReadonlyArray<Arm<T, R> | ExtractArm<T, any, R>>,
+): R {
   for (const [pattern, handler] of arms) {
-    if (testPattern(pattern, value)) {
-      return handler(value);
+    if (isExtractingPattern<T>(pattern)) {
+      const extracted = pattern[EXTRACT](value);
+      if (extracted !== undefined) {
+        return (handler as ExtractHandler<T, any, R>)(value, extracted);
+      }
+      continue;
+    }
+    if (testPattern(pattern as Pattern<T>, value)) {
+      return (handler as Handler<T, R>)(value);
     }
   }
   throw new MatchError(value);
@@ -144,11 +188,21 @@ export function match<T, R>(value: T, arms: ReadonlyArray<Arm<T, R>>): R {
  */
 export async function matchAsync<T, R>(
   value: T,
-  arms: ReadonlyArray<readonly [Pattern<T>, (value: T) => R | Promise<R>]>,
+  arms: ReadonlyArray<
+    | readonly [Pattern<T>, (value: T) => R | Promise<R>]
+    | readonly [ExtractingPattern<T, any>, (value: T, extracted: any) => R | Promise<R>]
+  >,
 ): Promise<R> {
   for (const [pattern, handler] of arms) {
-    if (testPattern(pattern, value)) {
-      return handler(value);
+    if (isExtractingPattern<T>(pattern)) {
+      const extracted = pattern[EXTRACT](value);
+      if (extracted !== undefined) {
+        return (handler as (v: T, e: any) => R | Promise<R>)(value, extracted);
+      }
+      continue;
+    }
+    if (testPattern(pattern as Pattern<T>, value)) {
+      return (handler as (v: T) => R | Promise<R>)(value);
     }
   }
   throw new MatchError(value);
@@ -400,6 +454,29 @@ export function anyOf<T>(...patterns: Pattern<T>[]): Predicate<T> {
  */
 export function not<T>(pattern: Pattern<T>): Predicate<T> {
   return (value: T) => !testPattern(pattern, value);
+}
+
+/**
+ * Create a pattern that matches string values against a regular expression.
+ * When matched, the handler receives the match groups as a second argument.
+ *
+ * @example
+ * ```ts
+ * match(input, [
+ *   [regex(/^(\d+)-(\d+)$/), (v, [, start, end]) => ({ start, end })],
+ *   [regex(/^\d+$/), (v) => ({ single: v })],
+ *   [_, () => null],
+ * ]);
+ * ```
+ */
+export function regex(pattern: RegExp): ExtractingPattern<unknown, RegExpMatchArray> {
+  return {
+    [EXTRACT](value: unknown): RegExpMatchArray | undefined {
+      if (typeof value !== "string") return undefined;
+      const m = value.match(pattern);
+      return m ?? undefined;
+    },
+  };
 }
 
 // -- Built-in guards --------------------------------------------------------
