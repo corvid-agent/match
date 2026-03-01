@@ -4,6 +4,18 @@
   "description": "Type-safe pattern matching with exhaustive checks, guards, and result extraction. Zero deps. TypeScript-first.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./result": {
+      "types": "./dist/result.d.ts",
+      "import": "./dist/result.js",
+      "default": "./dist/result.js"
+    }
+  },
   "files": [
     "dist"
   ],
