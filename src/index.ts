@@ -479,6 +479,74 @@ export function regex(pattern: RegExp): ExtractingPattern<unknown, RegExpMatchAr
   };
 }
 
+// -- Array / tuple helpers --------------------------------------------------
+
+/**
+ * Create a pattern that matches arrays starting with the given elements.
+ * Each argument is matched against the corresponding element at that index.
+ *
+ * @example
+ * ```ts
+ * match(list, [
+ *   [head(1, 2), ([, , ...rest]) => rest],  // starts with [1, 2]
+ *   [head("a"), ([, ...rest]) => rest],       // starts with "a"
+ *   [_, () => []],
+ * ]);
+ * ```
+ */
+export function head<T>(...patterns: Pattern<T>[]): Predicate<T[]> {
+  return (value: T[]) => {
+    if (!Array.isArray(value)) return false;
+    if (value.length < patterns.length) return false;
+    return patterns.every((p, i) => testPattern(p, value[i]));
+  };
+}
+
+/**
+ * Create a pattern that matches arrays ending with the given elements.
+ * Each argument is matched against the corresponding element from the end.
+ *
+ * @example
+ * ```ts
+ * match(list, [
+ *   [tail(9, 10), (arr) => "ends with 9, 10"],
+ *   [tail(0), () => "ends with zero"],
+ *   [_, () => "other"],
+ * ]);
+ * ```
+ */
+export function tail<T>(...patterns: Pattern<T>[]): Predicate<T[]> {
+  return (value: T[]) => {
+    if (!Array.isArray(value)) return false;
+    if (value.length < patterns.length) return false;
+    const offset = value.length - patterns.length;
+    return patterns.every((p, i) => testPattern(p, value[offset + i]));
+  };
+}
+
+/**
+ * Create a pattern that matches arrays/tuples of an exact length,
+ * with each position matched against the corresponding pattern.
+ * Use `_` as a wildcard for positions you don't care about.
+ *
+ * @example
+ * ```ts
+ * match(point, [
+ *   [tuple(0, 0), () => "origin"],
+ *   [tuple(_, 0), ([x]) => `on x-axis at ${x}`],
+ *   [tuple(0, _), ([, y]) => `on y-axis at ${y}`],
+ *   [_, ([x, y]) => `(${x}, ${y})`],
+ * ]);
+ * ```
+ */
+export function tuple<T>(...patterns: Pattern<T>[]): Predicate<T[]> {
+  return (value: T[]) => {
+    if (!Array.isArray(value)) return false;
+    if (value.length !== patterns.length) return false;
+    return patterns.every((p, i) => testPattern(p, value[i]));
+  };
+}
+
 // -- Built-in guards --------------------------------------------------------
 
 /** Guard that checks if a value is a string. */
