@@ -10,6 +10,7 @@ import {
   allOf,
   anyOf,
   not,
+  regex,
   isString,
   isNumber,
   isBoolean,
@@ -504,6 +505,93 @@ describe("built-in guards", () => {
       [_, () => "other"],
     ]);
     expect(result).toBe("number");
+  });
+});
+
+// -- regex() ----------------------------------------------------------------
+
+describe("regex", () => {
+  test("matches a simple pattern", () => {
+    const result = match("hello123", [
+      [regex(/^\d+$/), () => "digits"],
+      [regex(/^[a-z]+\d+$/), (v) => `alphaNum: ${v}`],
+      [_, () => "other"],
+    ]);
+    expect(result).toBe("alphaNum: hello123");
+  });
+
+  test("extracts capture groups", () => {
+    const result = match("10-20", [
+      [regex(/^(\d+)-(\d+)$/), (v, [, start, end]) => ({ start, end })],
+      [_, () => null],
+    ]);
+    expect(result).toEqual({ start: "10", end: "20" });
+  });
+
+  test("provides full match as first group element", () => {
+    const result = match("abc", [
+      [regex(/^(a)(b)(c)$/), (_v, groups) => groups[0]],
+      [_, () => "no"],
+    ]);
+    expect(result).toBe("abc");
+  });
+
+  test("does not match non-matching strings", () => {
+    const result = match("hello", [
+      [regex(/^\d+$/), () => "digits"],
+      [_, () => "fallback"],
+    ]);
+    expect(result).toBe("fallback");
+  });
+
+  test("does not match non-string values", () => {
+    const result = match(42 as any, [
+      [regex(/^\d+$/), () => "digits"],
+      [_, () => "not a string"],
+    ]);
+    expect(result).toBe("not a string");
+  });
+
+  test("works with named capture groups", () => {
+    const result = match("2026-03-01", [
+      [regex(/^(?<year>\d{4})-(?<month>\d{2})-(?<day>\d{2})$/), (_v, groups) => groups.groups],
+      [_, () => null],
+    ]);
+    expect(result).toEqual({ year: "2026", month: "03", day: "01" });
+  });
+
+  test("handler can ignore groups", () => {
+    const result = match("test", [
+      [regex(/^test$/), (v) => `matched: ${v}`],
+      [_, () => "no"],
+    ]);
+    expect(result).toBe("matched: test");
+  });
+
+  test("works with matchAsync", async () => {
+    const result = await matchAsync("abc-123", [
+      [regex(/^([a-z]+)-(\d+)$/), async (_v, [, letters, digits]) => ({ letters, digits })],
+      [_, async () => null],
+    ]);
+    expect(result).toEqual({ letters: "abc", digits: "123" });
+  });
+
+  test("can mix regex arms with regular arms", () => {
+    const result = match("42", [
+      ["special" as any, () => "literal"],
+      [regex(/^(\d+)$/), (_v, [, num]) => `number: ${num}`],
+      [_, () => "other"],
+    ]);
+    expect(result).toBe("number: 42");
+  });
+
+  test("first matching regex wins", () => {
+    const result = match("123", [
+      [regex(/^(\d)(\d)(\d)$/), () => "three digits"],
+      [regex(/^\d+$/), () => "any digits"],
+      [_, () => "other"],
+    ]);
+    expect(result).toBe("three digits");
   });
 });
 
