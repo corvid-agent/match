@@ -11,6 +11,9 @@ import {
   anyOf,
   not,
   regex,
+  head,
+  tail,
+  tuple,
   isString,
   isNumber,
   isBoolean,
@@ -458,6 +461,184 @@ describe("not", () => {
       [_, () => "big"],
     ]);
     expect(result).toBe("small");
+  });
+});
+
+// -- Array / tuple helpers --------------------------------------------------
+
+describe("head", () => {
+  test("matches array starting with given element", () => {
+    const result = match<number[], string>([1, 2, 3], [
+      [head(1) as any, () => "starts with 1"],
+      [_, () => "other"],
+    ]);
+    expect(result).toBe("starts with 1");
+  });
+
+  test("matches array starting with multiple elements", () => {
+    const result = match<number[], string>([1, 2, 3, 4], [
+      [head(1, 2) as any, () => "starts with 1, 2"],
+      [_, () => "other"],
+    ]);
+    expect(result).toBe("starts with 1, 2");
+  });
+
+  test("does not match when head differs", () => {
+    const result = match<number[], string>([5, 2, 3], [
+      [head(1) as any, () => "starts with 1"],
+      [_, () => "other"],
+    ]);
+    expect(result).toBe("other");
+  });
+
+  test("does not match when array is too short", () => {
+    const result = match<number[], string>([1], [
+      [head(1, 2, 3) as any, () => "matched"],
+      [_, () => "too short"],
+    ]);
+    expect(result).toBe("too short");
+  });
+
+  test("works with predicate patterns in head", () => {
+    const result = match<number[], string>([10, 20, 30], [
+      [head((n: number) => n > 5) as any, () => "starts big"],
+      [_, () => "other"],
+    ]);
+    expect(result).toBe("starts big");
+  });
+
+  test("works with wildcard in head", () => {
+    const result = match<number[], string>([99, 2], [
+      [head(_ as any, 2) as any, () => "second is 2"],
+      [_, () => "other"],
+    ]);
+    expect(result).toBe("second is 2");
+  });
+
+  test("allows longer arrays", () => {
+    const result = match<number[], string>([1, 2, 3, 4, 5], [
+      [head(1) as any, () => "starts with 1"],
+      [_, () => "other"],
+    ]);
+    expect(result).toBe("starts with 1");
+  });
+
+  test("rejects non-array values", () => {
+    const result = match<any, string>("not an array", [
+      [head(1) as any, () => "matched"],
+      [_, () => "not array"],
+    ]);
+    expect(result).toBe("not array");
+  });
+});
+
+describe("tail", () => {
+  test("matches array ending with given element", () => {
+    const result = match<number[], string>([1, 2, 3], [
+      [tail(3) as any, () => "ends with 3"],
+      [_, () => "other"],
+    ]);
+    expect(result).toBe("ends with 3");
+  });
+
+  test("matches array ending with multiple elements", () => {
+    const result = match<number[], string>([1, 2, 3, 4], [
+      [tail(3, 4) as any, () => "ends with 3, 4"],
+      [_, () => "other"],
+    ]);
+    expect(result).toBe("ends with 3, 4");
+  });
+
+  test("does not match when tail differs", () => {
+    const result = match<number[], string>([1, 2, 3], [
+      [tail(5) as any, () => "ends with 5"],
+      [_, () => "other"],
+    ]);
+    expect(result).toBe("other");
+  });
+
+  test("does not match when array is too short", () => {
+    const result = match<number[], string>([1], [
+      [tail(1, 2, 3) as any, () => "matched"],
+      [_, () => "too short"],
+    ]);
+    expect(result).toBe("too short");
+  });
+
+  test("works with predicate patterns in tail", () => {
+    const result = match<number[], string>([1, 2, 100], [
+      [tail((n: number) => n > 50) as any, () => "ends big"],
+      [_, () => "other"],
+    ]);
+    expect(result).toBe("ends big");
+  });
+});
+
+describe("tuple", () => {
+  test("matches exact-length array with matching elements", () => {
+    const result = match<number[], string>([1, 2], [
+      [tuple(1, 2) as any, () => "pair 1,2"],
+      [_, () => "other"],
+    ]);
+    expect(result).toBe("pair 1,2");
+  });
+
+  test("does not match different length", () => {
+    const result = match<number[], string>([1, 2, 3], [
+      [tuple(1, 2) as any, () => "pair"],
+      [_, () => "not a pair"],
+    ]);
+    expect(result).toBe("not a pair");
+  });
+
+  test("matches with wildcards", () => {
+    const result = match<number[], string>([5, 10, 3], [
+      [tuple(_ as any, _ as any, 3) as any, () => "third is 3"],
+      [_, () => "other"],
+    ]);
+    expect(result).toBe("third is 3");
+  });
+
+  test("matches origin point", () => {
+    const result = match<number[], string>([0, 0], [
+      [tuple(0, 0) as any, () => "origin"],
+      [tuple(_ as any, 0) as any, ([x]) => `x-axis at ${x}`],
+      [tuple(0, _ as any) as any, ([, y]) => `y-axis at ${y}`],
+      [_, ([x, y]) => `(${x}, ${y})`],
+    ]);
+    expect(result).toBe("origin");
+  });
+
+  test("matches with predicates", () => {
+    const result = match<number[], string>([5, -3], [
+      [tuple((n: number) => n > 0, (n: number) => n < 0) as any, () => "pos, neg"],
+      [_, () => "other"],
+    ]);
+    expect(result).toBe("pos, neg");
+  });
+
+  test("handler receives the full array for destructuring", () => {
+    const result = match<number[], number>([10, 20, 30], [
+      [tuple(_ as any, _ as any, 30) as any, ([a, b]) => a + b],
+      [_, () => 0],
+    ]);
+    expect(result).toBe(30);
+  });
+
+  test("empty tuple matches empty array", () => {
+    const result = match<number[], string>([], [
+      [tuple() as any, () => "empty"],
+      [_, () => "not empty"],
+    ]);
+    expect(result).toBe("empty");
+  });
+
+  test("rejects non-array values", () => {
+    const result = match<any, string>({ length: 2 }, [
+      [tuple(1, 2) as any, () => "matched"],
+      [_, () => "not array"],
+    ]);
+    expect(result).toBe("not array");
   });
 });
 
