@@ -222,13 +222,12 @@ describe("matchType", () => {
     expect(result).toBe("default");
   });
 
-  test("throws when no handler and no default", () => {
+  test("throws when no handler and no default (runtime)", () => {
     const action: Action = { type: "reset" };
-    expect(() =>
-      matchType(action, {
-        increment: () => "inc",
-      }),
-    ).toThrow(MatchError);
+    // Bypass type checking — this is now a compile-time error,
+    // but we still verify the runtime safety net.
+    const handlers: any = { increment: () => "inc" };
+    expect(() => matchType(action, handlers)).toThrow(MatchError);
   });
 
   test("supports custom discriminant key", () => {
