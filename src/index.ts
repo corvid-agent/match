@@ -41,6 +41,12 @@ export interface MatchOptions {
   key?: string;
 }
 
+/** Extract the union member matching a specific tag value. */
+type VariantOf<T, K extends string, V extends string> = Extract<
+  T,
+  Record<K, V>
+>;
+
 // -- Extracting pattern protocol --------------------------------------------
 
 const EXTRACT = Symbol("match.extract");
@@ -214,7 +220,10 @@ export async function matchAsync<T, R>(
  * Match a discriminated union by its tag property.
  *
  * Provides a cleaner API for tagged unions — supply an object mapping
- * each tag to its handler. Optionally provide a `_` key for the default.
+ * each tag to its handler. TypeScript enforces exhaustiveness at compile time:
+ * either handle every tag, or provide a `_` default handler.
+ *
+ * Each handler receives the narrowed union member, not the full union.
  *
  * @example
  * ```ts
@@ -222,24 +231,72 @@ export async function matchAsync<T, R>(
  *   | { type: "increment"; amount: number }
  *   | { type: "reset" };
  *
- * const next = matchType(action, {
- *   increment: (a) => state + a.amount,
+ * // Exhaustive — all tags handled
+ * matchType(action, {
+ *   increment: (a) => state + a.amount,  // a: { type: "increment"; amount: number }
  *   reset: () => 0,
+ * });
+ *
+ * // With default — partial handlers OK
+ * matchType(action, {
+ *   increment: () => "inc",
+ *   _: () => "other",
+ * });
+ *
+ * // Compile error — "reset" handler missing, no default
+ * matchType(action, {
+ *   increment: (a) => a.amount,
  * });
  * ```
  */
+
+// Default key "type" — with default handler
 export function matchType<
-  T extends Record<string, any>,
+  T extends { type: string },
+  H extends Partial<{
+    [V in T["type"] & string]: (value: VariantOf<T, "type", V>) => any;
+  }> & { _: (value: T) => any },
+>(value: T, handlers: H): ReturnType<Exclude<H[keyof H], undefined>>;
+
+// Default key "type" — exhaustive (all tag handlers required)
+export function matchType<
+  T extends { type: string },
+  H extends {
+    [V in T["type"] & string]: (value: VariantOf<T, "type", V>) => any;
+  },
+>(value: T, handlers: H): ReturnType<H[keyof H]>;
+
+// Custom key — with default handler
+export function matchType<
   K extends string,
-  H extends Partial<{ [Tag in T[K & keyof T]]: (value: T) => any }> & { _?: (value: T) => any },
+  T extends Record<K, string>,
+  H extends Partial<{
+    [V in T[K] & string]: (value: VariantOf<T, K, V>) => any;
+  }> & { _: (value: T) => any },
 >(
   value: T,
   handlers: H,
+  options: { key: K },
+): ReturnType<Exclude<H[keyof H], undefined>>;
+
+// Custom key — exhaustive (all tag handlers required)
+export function matchType<
+  K extends string,
+  T extends Record<K, string>,
+  H extends {
+    [V in T[K] & string]: (value: VariantOf<T, K, V>) => any;
+  },
+>(value: T, handlers: H, options: { key: K }): ReturnType<H[keyof H]>;
+
+// Implementation
+export function matchType(
+  value: Record<string, any>,
+  handlers: Record<string, Function>,
   options?: MatchOptions,
-): ReturnType<Exclude<H[keyof H], undefined>> {
-  const key = (options?.key ?? "type") as keyof T;
+): any {
+  const key = options?.key ?? "type";
   const tag = value[key] as string;
-  const handler = (handlers as any)[tag] ?? (handlers as any)._;
+  const handler = handlers[tag] ?? handlers._;
   if (!handler) {
     throw new MatchError(value, `No handler for tag "${tag}"`);
   }
